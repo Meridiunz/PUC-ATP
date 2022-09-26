@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branchs: [ main ]
+  pull_request:
+    branchs: [ main ]
+  
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install packages
+        run: npm install
+      
+      - name: Docker Auth
+        uses: docker/login-action@v1.12.0
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: Docker Push To Hub
+        uses: docker/build-push-action@v2.7.0
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ secrets.DOCKER_LOGIN }}/devopsapp:latest
+
+  test:
+    needs: [build]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Scan app
+        uses: AppThreat/sast-scan-action@v1.0.0
+        with:
+          output: reports
+          type: nodejs,bash
+
+      - name: Generate Artfacts
+        uses: actions/upload-artifact@v1.0.0
+        with:
+          name: sast-scan-reports
+          path: reports
+
+  deploy:
+    needs: [test]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: deploy application
+        uses: akhileshns/heroku-deploy@v3.12.12
+        with:
+          heroku_api_key: ${{secrets.HEROKU_API_KEY}}
+          heroku_app_name: ${{ secrets.HEROKU_APP_NAME }}
+          heroku_email: ${{ secrets.HEROKU_EMAIL }}
+          usedocker: true
+
+      - name: Notify Discord
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        uses: Ilshidur/action-discord@master
+        with:
+          args: 'new commit created by ${{ github.actor }}'
+
+    
